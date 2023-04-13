@@ -1,0 +1,17 @@
+
+set log=D:\SQLScript\Test_log.txt
+echo start for loop >>%log%
+for /F "tokens=*" %%S in (D:\Servers\ServersList.txt) do (
+sqlcmd -E -S %%S -i "D:\SQLScript\sqlquery.sql" -s "," -h-1 -W >> "D:\SQLScript\output1.csv"
+IF NOT ERRORLEVEL 0 GOTO :ERR
+)
+echo End for loop>>%log%
+echo !Success. sqlcmd ok. >>%log%
+
+
+GOTO :EOP
+:ERR
+echo !Error. sqlcmd failed >>%log%
+
+
+
