@@ -1,0 +1,51 @@
+DECLARE @CutoffDate DATETIME = '2024-01-01'; -- Date before which records will be deleted
+DECLARE @BatchSize INT = 1000; -- Number of records to delete in each batch
+DECLARE @SQL NVARCHAR(MAX); -- Variable to store the dynamic SQL
+DECLARE @TableName NVARCHAR(128); -- Variable to store table name
+DECLARE @SchemaName NVARCHAR(128); -- Variable to store schema name
+
+-- Table to store generated DELETE statements
+DECLARE @DeleteStatements TABLE (Statement NVARCHAR(MAX));
+
+-- Cursor to iterate through tables with the common column
+DECLARE table_cursor CURSOR FOR
+SELECT 
+    TABLE_SCHEMA, 
+    TABLE_NAME
+FROM 
+    INFORMATION_SCHEMA.COLUMNS
+WHERE 
+    COLUMN_NAME = 'transactiondate';
+
+OPEN table_cursor;
+FETCH NEXT FROM table_cursor INTO @SchemaName, @TableName;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Generate DELETE statement for each table
+    INSERT INTO @DeleteStatements (Statement)
+    VALUES (
+        'WHILE EXISTS (SELECT 1 FROM ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + 
+        ' WHERE transactiondate < @CutoffDate) ' + CHAR(13) + 
+        'BEGIN ' + CHAR(13) + 
+        '    DELETE TOP (' + CAST(@BatchSize AS NVARCHAR(10)) + ') FROM ' + 
+        QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + 
+        ' WHERE transactiondate < @CutoffDate; ' + CHAR(13) +
+        '    WAITFOR DELAY ''00:00:05''; ' + CHAR(13) + 
+        'END;'
+    );
+
+    FETCH NEXT FROM table_cursor INTO @SchemaName, @TableName;
+END
+
+CLOSE table_cursor;
+DEALLOCATE table_cursor;
+
+-- Combine all DELETE statements into a single SQL script
+SET @SQL = (SELECT STRING_AGG(Statement, CHAR(13) + CHAR(13)) FROM @DeleteStatements);
+
+-- Print the generated SQL for review (optional)
+PRINT @SQL;
+
+-- Execute the generated SQL
+EXEC sp_executesql @SQL, N'@CutoffDate DATETIME', @CutoffDate;
